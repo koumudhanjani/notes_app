@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import NoteEditor from './components/NoteEditor';
 import Toast from './components/Toast';
@@ -128,18 +128,22 @@ export default function App() {
           if (!activeNoteId || !cloudNotes.some((n) => n.id === activeNoteId)) {
             setActiveNoteId(cloudNotes[0].id);
           }
+        } else if (snapshot.empty && notes.length > 0) {
+          // Cloud is empty for this user: automatically save all existing notes to Firestore
+          notes.forEach((n) => {
+            setDoc(doc(db, 'users', user.uid, 'notes', n.id), n).catch(console.error);
+          });
         }
         setSyncStatus('idle');
       },
       (error) => {
         console.error('Firestore sync error:', error);
         setSyncStatus('idle');
-        addToast('Cloud sync error: check Firestore security rules', 'error');
       }
     );
 
     return () => unsubscribe();
-  }, [user, activeNoteId, addToast]);
+  }, [user, activeNoteId, notes]);
 
   // Save notes locally for offline backup
   useEffect(() => {
@@ -159,30 +163,7 @@ export default function App() {
     return Array.from(tagSet);
   }, [notes]);
 
-  // Sync / Upload local notes to Firestore
-  const handleSyncLocalToCloud = async () => {
-    if (!user) {
-      addToast('Please sign in first', 'error');
-      return;
-    }
-    const { db } = getFirebaseServices();
-    if (!db) return;
-
-    try {
-      setSyncStatus('syncing');
-      for (const note of notes) {
-        await setDoc(doc(db, 'users', user.uid, 'notes', note.id), note);
-      }
-      setSyncStatus('idle');
-      addToast(`Successfully uploaded ${notes.length} notes to Cloud!`, 'info');
-    } catch (err) {
-      setSyncStatus('idle');
-      console.error(err);
-      addToast('Failed to upload notes: ' + err.message, 'error');
-    }
-  };
-
-  // Create new note
+  // Create new note (directly saved to Cloud if signed in)
   const handleCreateNote = useCallback(async () => {
     const newNote = {
       id: generateId(),
@@ -200,7 +181,6 @@ export default function App() {
     setActiveNoteId(newNote.id);
     addToast('Created new note', 'info');
 
-    // Cloud write
     if (user) {
       const { db } = getFirebaseServices();
       if (db) {
@@ -208,7 +188,7 @@ export default function App() {
         try {
           await setDoc(doc(db, 'users', user.uid, 'notes', newNote.id), newNote);
         } catch (e) {
-          console.error(e);
+          console.error('Error creating note in cloud:', e);
         } finally {
           setSyncStatus('idle');
         }
@@ -216,22 +196,32 @@ export default function App() {
     }
   }, [user, addToast]);
 
-  // Update note
+  // Ref for debouncing rapid typing writes to Firestore
+  const saveTimeoutRef = useRef(null);
+
+  // Update note (directly saved to Cloud with debouncing)
   const handleUpdateNote = useCallback(
-    async (updatedNote) => {
+    (updatedNote) => {
       setNotes((prevNotes) =>
         prevNotes.map((note) => (note.id === updatedNote.id ? updatedNote : note))
       );
 
-      // Cloud write
       if (user) {
         const { db } = getFirebaseServices();
         if (db) {
-          try {
-            await setDoc(doc(db, 'users', user.uid, 'notes', updatedNote.id), updatedNote);
-          } catch (e) {
-            console.error('Error saving to cloud:', e);
+          setSyncStatus('syncing');
+          if (saveTimeoutRef.current) {
+            clearTimeout(saveTimeoutRef.current);
           }
+          saveTimeoutRef.current = setTimeout(async () => {
+            try {
+              await setDoc(doc(db, 'users', user.uid, 'notes', updatedNote.id), updatedNote);
+            } catch (e) {
+              console.error('Error saving to cloud:', e);
+            } finally {
+              setSyncStatus('idle');
+            }
+          }, 350);
         }
       }
     },
@@ -411,9 +401,6 @@ export default function App() {
         isOpen={isCloudModalOpen}
         onClose={() => setIsCloudModalOpen(false)}
         user={user}
-        isFirebaseConfigured={isFirebaseConfigured}
-        onConfigUpdated={checkFirebase}
-        onSyncLocalToCloud={handleSyncLocalToCloud}
         addToast={addToast}
       />
 
