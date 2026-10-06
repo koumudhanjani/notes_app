@@ -66,7 +66,9 @@ export default function App() {
   });
 
   // Sidebar controls & filters
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    return typeof window !== 'undefined' ? window.innerWidth <= 768 : false;
+  });
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all'); // 'all', 'pinned', 'starred', 'tag:xyz'
   const [sortBy, setSortBy] = useState('updated'); // 'updated', 'created', 'alphabetical'
@@ -389,7 +391,17 @@ export default function App() {
         onOpenCloudSync={() => setIsCloudModalOpen(true)}
         user={user}
         isFirebaseConfigured={isFirebaseConfigured}
+        onCloseSidebar={() => setIsSidebarCollapsed(true)}
       />
+
+      {/* Backdrop overlay for mobile to tap anywhere outside to close sidebar */}
+      {!isSidebarCollapsed && (
+        <div
+          className="sidebar-backdrop"
+          onClick={() => setIsSidebarCollapsed(true)}
+          title="Tap to close sidebar"
+        />
+      )}
 
       <NoteEditor
         note={activeNote}

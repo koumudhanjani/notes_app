@@ -962,14 +962,119 @@ body {
   color: var(--danger);
 }
 
-/* Responsive adjustments */
+/* Sidebar Close Button (hidden on desktop) */
+.sidebar-close-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  border-radius: var(--radius-md);
+  width: 34px;
+  height: 34px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sidebar-close-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+/* Responsive Mobile Styles */
 @media (max-width: 768px) {
-  .sidebar {
-    position: absolute;
-    height: 100%;
-    box-shadow: var(--shadow-lg);
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    z-index: 80;
+    animation: fadeIn 0.2s ease;
+    cursor: pointer;
   }
+
+  .sidebar {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    bottom: 0 !important;
+    height: 100% !important;
+    width: min(310px, 85vw) !important;
+    min-width: unset !important;
+    z-index: 100 !important;
+    box-shadow: 6px 0 24px rgba(0, 0, 0, 0.4) !important;
+    transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    transform: translateX(0) !important;
+    margin-left: 0 !important;
+  }
+
+  .sidebar.collapsed {
+    transform: translateX(-100%) !important;
+    margin-left: 0 !important;
+  }
+
+  .sidebar-close-btn {
+    display: flex;
+  }
+
+  .editor-topbar {
+    padding: 8px 12px;
+    gap: 6px;
+  }
+
+  .sidebar-toggle-btn {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+  }
+
+  .editor-workspace {
+    padding: 12px 14px;
+  }
+
+  .note-title-input {
+    font-size: 1.35rem;
+    margin-bottom: 8px;
+  }
+
+  .note-meta-bar {
+    padding: 8px 14px;
+    gap: 8px;
+  }
+
+  .markdown-toolbar {
+    padding: 4px 0;
+    margin-bottom: 8px;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .editor-footer {
+    padding: 6px 14px;
+    font-size: 0.7rem;
+  }
+
   .preview-pane {
     display: none;
   }
+
+  .preview-pane.full {
+    display: block !important;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }

@@ -35,7 +35,8 @@ export default function Sidebar({
   onImportAll,
   onOpenCloudSync,
   user,
-  isFirebaseConfigured
+  isFirebaseConfigured,
+  onCloseSidebar
 }) {
   const fileInputRef = useRef(null);
 
@@ -103,12 +104,29 @@ export default function Sidebar({
           >
             {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
           </button>
+          <button
+            type="button"
+            className="sidebar-close-btn"
+            onClick={onCloseSidebar}
+            title="Close sidebar"
+          >
+            <X size={18} />
+          </button>
         </div>
       </div>
 
       {/* Action Area: New Note & Search */}
       <div className="sidebar-actions">
-        <button type="button" className="btn-new-note" onClick={onCreateNote}>
+        <button
+          type="button"
+          className="btn-new-note"
+          onClick={() => {
+            onCreateNote();
+            if (onCloseSidebar && window.innerWidth <= 768) {
+              onCloseSidebar();
+            }
+          }}
+        >
           <Plus size={18} />
           <span>New Note</span>
         </button>
@@ -214,7 +232,12 @@ export default function Sidebar({
               <div
                 key={note.id}
                 className={`note-item ${isActive ? 'active' : ''}`}
-                onClick={() => onSelectNote(note.id)}
+                onClick={() => {
+                  onSelectNote(note.id);
+                  if (onCloseSidebar && window.innerWidth <= 768) {
+                    onCloseSidebar();
+                  }
+                }}
               >
                 <div className="note-item-header">
                   <span className="note-item-title">
