@@ -13,7 +13,8 @@ import {
   Tag,
   X,
   MoreVertical,
-  Files
+  Files,
+  Cloud
 } from 'lucide-react';
 import { marked } from 'marked';
 import MarkdownToolbar from './MarkdownToolbar';
@@ -32,7 +33,9 @@ export default function NoteEditor({
   onDuplicateNote,
   toggleSidebar,
   isSidebarCollapsed,
-  addToast
+  addToast,
+  user,
+  syncStatus
 }) {
   const [viewMode, setViewMode] = useState('split'); // 'edit', 'preview', 'split'
   const [newTagInput, setNewTagInput] = useState('');
@@ -170,7 +173,14 @@ export default function NoteEditor({
             <Menu size={16} />
           </button>
           <div className="save-status">
-            <span>Saved locally</span>
+            {user ? (
+              <>
+                <Cloud size={13} color="#10b981" />
+                <span>{syncStatus === 'syncing' ? 'Syncing...' : 'Cloud synced'}</span>
+              </>
+            ) : (
+              <span>Saved locally</span>
+            )}
           </div>
         </div>
 

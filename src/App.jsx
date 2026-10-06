@@ -2,8 +2,18 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import NoteEditor from './components/NoteEditor';
 import Toast from './components/Toast';
+import CloudSyncModal from './components/CloudSyncModal';
 import { INITIAL_NOTES } from './utils/initialNotes';
 import { generateId, downloadFile } from './utils/helpers';
+import {
+  getFirebaseServices,
+  onAuthStateChanged,
+  collection,
+  doc,
+  setDoc,
+  deleteDoc,
+  onSnapshot
+} from './firebase';
 
 const STORAGE_KEY = 'quicknotes_data_v1';
 const THEME_KEY = 'quicknotes_theme';
@@ -27,6 +37,12 @@ export default function App() {
   const toggleTheme = () => {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
+
+  // Firebase Auth & Cloud Sync state
+  const [user, setUser] = useState(null);
+  const [isFirebaseConfigured, setIsFirebaseConfigured] = useState(false);
+  const [isCloudModalOpen, setIsCloudModalOpen] = useState(false);
+  const [syncStatus, setSyncStatus] = useState('idle'); // 'idle' | 'syncing'
 
   // Notes state
   const [notes, setNotes] = useState(() => {
@@ -70,15 +86,69 @@ export default function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Save notes to localStorage
+  // Initialize and observe Firebase Authentication
+  const checkFirebase = useCallback(() => {
+    const { auth, isConfigured } = getFirebaseServices();
+    setIsFirebaseConfigured(isConfigured);
+    if (isConfigured && auth) {
+      return onAuthStateChanged(auth, (currentUser) => {
+        setUser(currentUser);
+        if (currentUser) {
+          addToast(`Signed in as ${currentUser.displayName || currentUser.email}`, 'info');
+        }
+      });
+    }
+    return () => {};
+  }, [addToast]);
+
+  useEffect(() => {
+    const unsubscribe = checkFirebase();
+    return () => unsubscribe && unsubscribe();
+  }, [checkFirebase]);
+
+  // Real-time Firestore Cloud Sync when User is authenticated
+  useEffect(() => {
+    if (!user) return;
+    const { db, isConfigured } = getFirebaseServices();
+    if (!isConfigured || !db) return;
+
+    setSyncStatus('syncing');
+    const userNotesRef = collection(db, 'users', user.uid, 'notes');
+
+    const unsubscribe = onSnapshot(
+      userNotesRef,
+      (snapshot) => {
+        const cloudNotes = [];
+        snapshot.forEach((docSnap) => {
+          cloudNotes.push({ id: docSnap.id, ...docSnap.data() });
+        });
+
+        if (cloudNotes.length > 0) {
+          setNotes(cloudNotes);
+          if (!activeNoteId || !cloudNotes.some((n) => n.id === activeNoteId)) {
+            setActiveNoteId(cloudNotes[0].id);
+          }
+        }
+        setSyncStatus('idle');
+      },
+      (error) => {
+        console.error('Firestore sync error:', error);
+        setSyncStatus('idle');
+        addToast('Cloud sync error: check Firestore security rules', 'error');
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user, activeNoteId, addToast]);
+
+  // Save notes locally for offline backup
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
     } catch (e) {
       console.error('Failed to save notes:', e);
-      addToast('Storage quota exceeded or error saving', 'error');
     }
-  }, [notes, addToast]);
+  }, [notes]);
 
   // Extract all unique tags
   const allTags = useMemo(() => {
@@ -89,8 +159,31 @@ export default function App() {
     return Array.from(tagSet);
   }, [notes]);
 
+  // Sync / Upload local notes to Firestore
+  const handleSyncLocalToCloud = async () => {
+    if (!user) {
+      addToast('Please sign in first', 'error');
+      return;
+    }
+    const { db } = getFirebaseServices();
+    if (!db) return;
+
+    try {
+      setSyncStatus('syncing');
+      for (const note of notes) {
+        await setDoc(doc(db, 'users', user.uid, 'notes', note.id), note);
+      }
+      setSyncStatus('idle');
+      addToast(`Successfully uploaded ${notes.length} notes to Cloud!`, 'info');
+    } catch (err) {
+      setSyncStatus('idle');
+      console.error(err);
+      addToast('Failed to upload notes: ' + err.message, 'error');
+    }
+  };
+
   // Create new note
-  const handleCreateNote = useCallback(() => {
+  const handleCreateNote = useCallback(async () => {
     const newNote = {
       id: generateId(),
       title: 'Untitled Note',
@@ -102,43 +195,104 @@ export default function App() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
+
     setNotes((prev) => [newNote, ...prev]);
     setActiveNoteId(newNote.id);
     addToast('Created new note', 'info');
-  }, [addToast]);
+
+    // Cloud write
+    if (user) {
+      const { db } = getFirebaseServices();
+      if (db) {
+        setSyncStatus('syncing');
+        try {
+          await setDoc(doc(db, 'users', user.uid, 'notes', newNote.id), newNote);
+        } catch (e) {
+          console.error(e);
+        } finally {
+          setSyncStatus('idle');
+        }
+      }
+    }
+  }, [user, addToast]);
 
   // Update note
-  const handleUpdateNote = useCallback((updatedNote) => {
-    setNotes((prevNotes) =>
-      prevNotes.map((note) => (note.id === updatedNote.id ? updatedNote : note))
-    );
-  }, []);
+  const handleUpdateNote = useCallback(
+    async (updatedNote) => {
+      setNotes((prevNotes) =>
+        prevNotes.map((note) => (note.id === updatedNote.id ? updatedNote : note))
+      );
+
+      // Cloud write
+      if (user) {
+        const { db } = getFirebaseServices();
+        if (db) {
+          try {
+            await setDoc(doc(db, 'users', user.uid, 'notes', updatedNote.id), updatedNote);
+          } catch (e) {
+            console.error('Error saving to cloud:', e);
+          }
+        }
+      }
+    },
+    [user]
+  );
 
   // Delete note
-  const handleDeleteNote = useCallback((idToDelete) => {
-    setNotes((prev) => {
-      const filtered = prev.filter((n) => n.id !== idToDelete);
-      if (activeNoteId === idToDelete) {
-        setActiveNoteId(filtered[0]?.id || null);
+  const handleDeleteNote = useCallback(
+    async (idToDelete) => {
+      setNotes((prev) => {
+        const filtered = prev.filter((n) => n.id !== idToDelete);
+        if (activeNoteId === idToDelete) {
+          setActiveNoteId(filtered[0]?.id || null);
+        }
+        return filtered;
+      });
+      addToast('Note deleted', 'info');
+
+      // Cloud delete
+      if (user) {
+        const { db } = getFirebaseServices();
+        if (db) {
+          try {
+            await deleteDoc(doc(db, 'users', user.uid, 'notes', idToDelete));
+          } catch (e) {
+            console.error('Error deleting from cloud:', e);
+          }
+        }
       }
-      return filtered;
-    });
-    addToast('Note deleted', 'info');
-  }, [activeNoteId, addToast]);
+    },
+    [user, activeNoteId, addToast]
+  );
 
   // Duplicate note
-  const handleDuplicateNote = useCallback((noteToCopy) => {
-    const duplicated = {
-      ...noteToCopy,
-      id: generateId(),
-      title: `${noteToCopy.title || 'Untitled'} (Copy)`,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    setNotes((prev) => [duplicated, ...prev]);
-    setActiveNoteId(duplicated.id);
-    addToast('Note duplicated', 'info');
-  }, [addToast]);
+  const handleDuplicateNote = useCallback(
+    async (noteToCopy) => {
+      const duplicated = {
+        ...noteToCopy,
+        id: generateId(),
+        title: `${noteToCopy.title || 'Untitled'} (Copy)`,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      setNotes((prev) => [duplicated, ...prev]);
+      setActiveNoteId(duplicated.id);
+      addToast('Note duplicated', 'info');
+
+      // Cloud write
+      if (user) {
+        const { db } = getFirebaseServices();
+        if (db) {
+          try {
+            await setDoc(doc(db, 'users', user.uid, 'notes', duplicated.id), duplicated);
+          } catch (e) {
+            console.error(e);
+          }
+        }
+      }
+    },
+    [user, addToast]
+  );
 
   // Export all notes as JSON
   const handleExportAll = () => {
@@ -161,7 +315,7 @@ export default function App() {
     addToast(`Successfully imported ${importedData.length} notes!`, 'info');
   };
 
-  // Keyboard shortcuts (Cmd/Ctrl + N, Cmd/Ctrl + S)
+  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
       const isCmdOrCtrl = e.metaKey || e.ctrlKey;
@@ -181,7 +335,6 @@ export default function App() {
   const filteredNotes = useMemo(() => {
     return notes
       .filter((note) => {
-        // Search filter
         if (searchTerm.trim()) {
           const q = searchTerm.toLowerCase();
           const matchTitle = (note.title || '').toLowerCase().includes(q);
@@ -190,7 +343,6 @@ export default function App() {
           if (!matchTitle && !matchContent && !matchTags) return false;
         }
 
-        // Category filter
         if (selectedCategory === 'pinned') return note.isPinned;
         if (selectedCategory === 'starred') return note.isFavorite;
         if (selectedCategory.startsWith('tag:')) {
@@ -201,11 +353,9 @@ export default function App() {
         return true;
       })
       .sort((a, b) => {
-        // Pinned notes stick to top
         if (a.isPinned !== b.isPinned) {
           return a.isPinned ? -1 : 1;
         }
-
         if (sortBy === 'updated') {
           return new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt);
         }
@@ -219,7 +369,6 @@ export default function App() {
       });
   }, [notes, searchTerm, selectedCategory, sortBy]);
 
-  // Find active note object
   const activeNote = notes.find((n) => n.id === activeNoteId) || filteredNotes[0] || null;
 
   return (
@@ -241,6 +390,9 @@ export default function App() {
         allTags={allTags}
         onExportAll={handleExportAll}
         onImportAll={handleImportAll}
+        onOpenCloudSync={() => setIsCloudModalOpen(true)}
+        user={user}
+        isFirebaseConfigured={isFirebaseConfigured}
       />
 
       <NoteEditor
@@ -250,6 +402,18 @@ export default function App() {
         onDuplicateNote={handleDuplicateNote}
         toggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
         isSidebarCollapsed={isSidebarCollapsed}
+        addToast={addToast}
+        user={user}
+        syncStatus={syncStatus}
+      />
+
+      <CloudSyncModal
+        isOpen={isCloudModalOpen}
+        onClose={() => setIsCloudModalOpen(false)}
+        user={user}
+        isFirebaseConfigured={isFirebaseConfigured}
+        onConfigUpdated={checkFirebase}
+        onSyncLocalToCloud={handleSyncLocalToCloud}
         addToast={addToast}
       />
 

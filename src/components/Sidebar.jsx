@@ -11,7 +11,8 @@ import {
   Download,
   Upload,
   Layers,
-  Sparkles
+  Sparkles,
+  Cloud
 } from 'lucide-react';
 import { formatDate } from '../utils/helpers';
 
@@ -31,7 +32,10 @@ export default function Sidebar({
   isCollapsed,
   allTags,
   onExportAll,
-  onImportAll
+  onImportAll,
+  onOpenCloudSync,
+  user,
+  isFirebaseConfigured
 }) {
   const fileInputRef = useRef(null);
 
@@ -62,14 +66,44 @@ export default function Sidebar({
           </div>
           <span>QuickNotes</span>
         </div>
-        <button
-          type="button"
-          className="theme-toggle-btn"
-          onClick={toggleTheme}
-          title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} mode`}
-        >
-          {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button
+            type="button"
+            className="theme-toggle-btn"
+            onClick={onOpenCloudSync}
+            title={user ? `Signed in as ${user.displayName || user.email}` : 'Cloud Sync & Settings'}
+            style={{ position: 'relative' }}
+          >
+            {user?.photoURL ? (
+              <img
+                src={user.photoURL}
+                alt="Profile"
+                style={{ width: '22px', height: '22px', borderRadius: '50%' }}
+              />
+            ) : (
+              <Cloud size={17} color={user ? '#10b981' : isFirebaseConfigured ? 'var(--accent)' : 'var(--text-muted)'} />
+            )}
+            <span
+              style={{
+                position: 'absolute',
+                bottom: '2px',
+                right: '2px',
+                width: '7px',
+                height: '7px',
+                borderRadius: '50%',
+                backgroundColor: user ? '#10b981' : isFirebaseConfigured ? '#f59e0b' : '#94a3b8'
+              }}
+            />
+          </button>
+          <button
+            type="button"
+            className="theme-toggle-btn"
+            onClick={toggleTheme}
+            title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} mode`}
+          >
+            {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+          </button>
+        </div>
       </div>
 
       {/* Action Area: New Note & Search */}

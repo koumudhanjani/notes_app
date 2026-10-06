@@ -29,11 +29,15 @@
   - Category filters: **All Notes**, **Pinned**, **Favorites**, and dynamic tag pills (`#tag`).
   - Sort notes by **Recently Updated**, **Date Created**, or **Alphabetical (A-Z)**.
   - Pin important notes to anchor them to the top of the list.
+- **☁️ Multi-Device Cloud Sync & Google Auth (New)**:
+  - Instant Google Sign-In with real-time Firebase Firestore database sync.
+  - Automatically synchronizes notes between your phone, tablet, and laptop.
+  - Built-in offline fallback: seamless offline support using local caching.
 - **🎨 Custom Styling & Dark Mode**:
   - One-click toggle between **Dark Mode** and **Light Mode**.
   - Pastel note color accents (Indigo, Emerald, Amber, Rose, Purple, Sky).
 - **💾 100% Privacy & Local Storage**:
-  - Automatically saves all notes in your browser’s `localStorage` — no sign-up or server required.
+  - Automatically saves all notes in your browser’s `localStorage` — works with or without sign-in.
   - **Export Note**: Download individual notes as `.md` (Markdown) or copy formatted text to clipboard.
   - **Backup & Restore**: Export all notes as a JSON backup file and import them back anytime.
 - **📱 Fully Responsive**:
@@ -42,6 +46,22 @@
   - `Cmd` / `Ctrl` + `N`: Create a new note
   - `Cmd` / `Ctrl` + `S`: Trigger quick-save notification
   - `Cmd` / `Ctrl` + `P`: Toggle pin on the active note
+
+---
+
+## ☁️ Cross-Device Cloud Sync Setup (Firebase Spark - 100% Free)
+
+You can write notes on your laptop and see them appear on your smartphone immediately:
+
+1. **Create a Free Firebase Project**:
+   - Go to [Firebase Console](https://console.firebase.google.com/) and create a project.
+   - Go to **Authentication** > **Sign-in method** > enable **Google**.
+   - Go to **Firestore Database** > **Create database** (Test mode or production mode).
+2. **Connect in App**:
+   - Open [QuickNotes](https://koumudhanjani.github.io/notes_app/).
+   - Click the **Cloud icon ☁️** in the top bar.
+   - Paste your `firebaseConfig` object and click **Save Config**.
+   - Click **Sign in with Google** — all your notes will now synchronize across every device!
 
 ---
 
