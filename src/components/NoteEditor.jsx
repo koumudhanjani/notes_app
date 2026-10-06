@@ -14,7 +14,8 @@ import {
   X,
   MoreVertical,
   Files,
-  Cloud
+  Cloud,
+  FileText
 } from 'lucide-react';
 import { marked } from 'marked';
 import MarkdownToolbar from './MarkdownToolbar';
@@ -151,6 +152,55 @@ export default function NoteEditor({
     setShowMoreMenu(false);
   };
 
+  const handleExportPDF = async () => {
+    try {
+      addToast('Preparing PDF download...', 'info');
+      setShowMoreMenu(false);
+
+      const titleSlug = (note.title || 'untitled').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const dateStr = new Date(note.updatedAt || note.createdAt).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+      const tagsStr = (note.tags || []).length > 0 ? ` • #${note.tags.join(' #')}` : '';
+
+      const container = document.createElement('div');
+      container.style.padding = '30px';
+      container.style.color = '#111827';
+      container.style.backgroundColor = '#ffffff';
+      container.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+
+      container.innerHTML = `
+        <div style="border-bottom: 2px solid #e5e7eb; padding-bottom: 12px; margin-bottom: 18px;">
+          <h1 style="font-size: 24px; font-weight: 700; margin: 0 0 6px 0; color: #111827;">${note.title || 'Untitled Note'}</h1>
+          <div style="font-size: 12px; color: #6b7280;">Saved on ${dateStr}${tagsStr}</div>
+        </div>
+        <div class="markdown-body" style="font-size: 14px; line-height: 1.6; color: #1f2937;">
+          ${marked.parse(note.content || '')}
+        </div>
+      `;
+
+      document.body.appendChild(container);
+
+      const html2pdf = (await import('html2pdf.js')).default;
+      const opt = {
+        margin: [10, 10, 10, 10],
+        filename: `${titleSlug}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      await html2pdf().set(opt).from(container).save();
+      document.body.removeChild(container);
+      addToast('PDF downloaded successfully!', 'info');
+    } catch (err) {
+      console.error('PDF generation error:', err);
+      window.print();
+    }
+  };
+
   const currentColorObj = NOTE_COLORS.find((c) => c.id === note.color) || NOTE_COLORS[0];
   const markdownHtml = marked.parse(note.content || '');
 
@@ -163,131 +213,174 @@ export default function NoteEditor({
     >
       {/* Top action toolbar */}
       <div className="editor-topbar">
-        <div className="topbar-left">
-          <button
-            type="button"
-            className="sidebar-toggle-btn"
-            onClick={toggleSidebar}
-            title={isSidebarCollapsed ? 'Show Sidebar' : 'Hide Sidebar'}
-          >
-            <Menu size={16} />
-          </button>
-          <div className="save-status">
-            {user ? (
-              <>
-                <Cloud size={13} color="#10b981" />
-                <span>{syncStatus === 'syncing' ? 'Syncing...' : 'Cloud synced'}</span>
-              </>
-            ) : (
-              <span>Saved locally</span>
+        <div className="editor-topbar-row">
+          <div className="topbar-left">
+            <button
+              type="button"
+              className="sidebar-toggle-btn"
+              onClick={toggleSidebar}
+              title={isSidebarCollapsed ? 'Show Sidebar' : 'Hide Sidebar'}
+            >
+              <Menu size={16} />
+            </button>
+            <div className="save-status">
+              {user ? (
+                <>
+                  <Cloud size={13} color="#10b981" />
+                  <span>{syncStatus === 'syncing' ? 'Saving...' : 'Cloud Synced'}</span>
+                </>
+              ) : (
+                <span>Saved locally</span>
+              )}
+            </div>
+          </div>
+
+          {/* Desktop View Mode Toggle */}
+          <div className="view-mode-tabs desktop-view-tabs">
+            <button
+              type="button"
+              className={`view-mode-tab ${viewMode === 'edit' ? 'active' : ''}`}
+              onClick={() => setViewMode('edit')}
+              title="Edit mode"
+            >
+              <Edit3 size={13} />
+              <span>Edit</span>
+            </button>
+            <button
+              type="button"
+              className={`view-mode-tab ${viewMode === 'split' ? 'active' : ''}`}
+              onClick={() => setViewMode('split')}
+              title="Side-by-side split view"
+            >
+              <Columns size={13} />
+              <span>Split</span>
+            </button>
+            <button
+              type="button"
+              className={`view-mode-tab ${viewMode === 'preview' ? 'active' : ''}`}
+              onClick={() => setViewMode('preview')}
+              title="Rendered preview"
+            >
+              <Eye size={13} />
+              <span>Preview</span>
+            </button>
+          </div>
+
+          {/* Right Action Icons (Pin, Star, Copy, More - Always visible on mobile & desktop!) */}
+          <div className="topbar-actions" ref={menuRef} style={{ position: 'relative' }}>
+            <button
+              type="button"
+              className={`icon-btn ${note.isPinned ? 'active' : ''}`}
+              onClick={handleTogglePin}
+              title={note.isPinned ? 'Unpin note' : 'Pin note to top'}
+            >
+              <Pin size={16} fill={note.isPinned ? 'currentColor' : 'none'} />
+            </button>
+
+            <button
+              type="button"
+              className={`icon-btn ${note.isFavorite ? 'active' : ''}`}
+              onClick={handleToggleFavorite}
+              title={note.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+            >
+              <Star size={16} fill={note.isFavorite ? 'currentColor' : 'none'} />
+            </button>
+
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={handleCopyContent}
+              title="Copy note text"
+            >
+              {copied ? <CopyCheck size={16} color="#10b981" /> : <Copy size={16} />}
+            </button>
+
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => setShowMoreMenu(!showMoreMenu)}
+              title="More actions"
+            >
+              <MoreVertical size={16} />
+            </button>
+
+            {/* Dropdown menu */}
+            {showMoreMenu && (
+              <div className="dropdown-menu">
+                <button
+                  type="button"
+                  className="dropdown-item"
+                  onClick={handleExportPDF}
+                >
+                  <FileText size={14} />
+                  <span>Download as PDF (.pdf)</span>
+                </button>
+                <button
+                  type="button"
+                  className="dropdown-item"
+                  onClick={handleExportMarkdown}
+                >
+                  <Download size={14} />
+                  <span>Export as Markdown (.md)</span>
+                </button>
+                <button
+                  type="button"
+                  className="dropdown-item"
+                  onClick={() => {
+                    onDuplicateNote(note);
+                    setShowMoreMenu(false);
+                  }}
+                >
+                  <Files size={14} />
+                  <span>Duplicate Note</span>
+                </button>
+                <button
+                  type="button"
+                  className="dropdown-item danger"
+                  onClick={() => {
+                    onDeleteNote(note.id);
+                    setShowMoreMenu(false);
+                  }}
+                >
+                  <Trash2 size={14} />
+                  <span>Delete Note</span>
+                </button>
+              </div>
             )}
           </div>
         </div>
 
-        {/* View Mode Toggle */}
-        <div className="view-mode-tabs">
-          <button
-            type="button"
-            className={`view-mode-tab ${viewMode === 'edit' ? 'active' : ''}`}
-            onClick={() => setViewMode('edit')}
-            title="Edit mode"
-          >
-            <Edit3 size={13} />
-            <span>Edit</span>
-          </button>
-          <button
-            type="button"
-            className={`view-mode-tab ${viewMode === 'split' ? 'active' : ''}`}
-            onClick={() => setViewMode('split')}
-            title="Side-by-side split view"
-          >
-            <Columns size={13} />
-            <span>Split</span>
-          </button>
-          <button
-            type="button"
-            className={`view-mode-tab ${viewMode === 'preview' ? 'active' : ''}`}
-            onClick={() => setViewMode('preview')}
-            title="Rendered preview"
-          >
-            <Eye size={13} />
-            <span>Preview</span>
-          </button>
-        </div>
-
-        {/* Right Action Icons */}
-        <div className="topbar-actions" ref={menuRef} style={{ position: 'relative' }}>
-          <button
-            type="button"
-            className={`icon-btn ${note.isPinned ? 'active' : ''}`}
-            onClick={handleTogglePin}
-            title={note.isPinned ? 'Unpin note' : 'Pin note to top'}
-          >
-            <Pin size={16} fill={note.isPinned ? 'currentColor' : 'none'} />
-          </button>
-
-          <button
-            type="button"
-            className={`icon-btn ${note.isFavorite ? 'active' : ''}`}
-            onClick={handleToggleFavorite}
-            title={note.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-          >
-            <Star size={16} fill={note.isFavorite ? 'currentColor' : 'none'} />
-          </button>
-
-          <button
-            type="button"
-            className="icon-btn"
-            onClick={handleCopyContent}
-            title="Copy note text"
-          >
-            {copied ? <CopyCheck size={16} color="#10b981" /> : <Copy size={16} />}
-          </button>
-
-          <button
-            type="button"
-            className="icon-btn"
-            onClick={() => setShowMoreMenu(!showMoreMenu)}
-            title="More actions"
-          >
-            <MoreVertical size={16} />
-          </button>
-
-          {/* More options menu */}
-          {showMoreMenu && (
-            <div className="dropdown-menu">
-              <button
-                type="button"
-                className="dropdown-item"
-                onClick={handleExportMarkdown}
-              >
-                <Download size={14} />
-                <span>Export as Markdown</span>
-              </button>
-              <button
-                type="button"
-                className="dropdown-item"
-                onClick={() => {
-                  onDuplicateNote(note);
-                  setShowMoreMenu(false);
-                }}
-              >
-                <Files size={14} />
-                <span>Duplicate Note</span>
-              </button>
-              <button
-                type="button"
-                className="dropdown-item danger"
-                onClick={() => {
-                  onDeleteNote(note.id);
-                  setShowMoreMenu(false);
-                }}
-              >
-                <Trash2 size={14} />
-                <span>Delete Note</span>
-              </button>
-            </div>
-          )}
+        {/* Mobile View Mode Tabs Row */}
+        <div className="mobile-view-tabs">
+          <div className="view-mode-tabs" style={{ width: '100%', justifyContent: 'center' }}>
+            <button
+              type="button"
+              className={`view-mode-tab ${viewMode === 'edit' ? 'active' : ''}`}
+              onClick={() => setViewMode('edit')}
+              style={{ flex: 1, justifyContent: 'center' }}
+            >
+              <Edit3 size={13} />
+              <span>Edit</span>
+            </button>
+            <button
+              type="button"
+              className={`view-mode-tab ${viewMode === 'split' ? 'active' : ''}`}
+              onClick={() => setViewMode('split')}
+              style={{ flex: 1, justifyContent: 'center' }}
+            >
+              <Columns size={13} />
+              <span>Split</span>
+            </button>
+            <button
+              type="button"
+              className={`view-mode-tab ${viewMode === 'preview' ? 'active' : ''}`}
+              onClick={() => setViewMode('preview')}
+              style={{ flex: 1, justifyContent: 'center' }}
+            >
+              <Eye size={13} />
+              <span>Preview</span>
+            </button>
+          </div>
         </div>
       </div>
 

@@ -434,12 +434,27 @@ body {
 /* Top Navigation / Action Bar */
 .editor-topbar {
   padding: 10px 20px;
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.editor-topbar-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background-color: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
+  width: 100%;
   gap: 12px;
+}
+
+.desktop-view-tabs {
+  display: flex;
+}
+
+.mobile-view-tabs {
+  display: none;
 }
 
 .topbar-left {
@@ -1029,7 +1044,35 @@ body {
 
   .editor-topbar {
     padding: 8px 12px;
-    gap: 6px;
+    gap: 8px;
+  }
+
+  .editor-topbar-row {
+    gap: 8px;
+  }
+
+  .desktop-view-tabs {
+    display: none !important;
+  }
+
+  .mobile-view-tabs {
+    display: block !important;
+    width: 100%;
+  }
+
+  .topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 1;
+    min-width: 0;
   }
 
   .sidebar-toggle-btn {
@@ -1077,4 +1120,44 @@ body {
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+@media print {
+  .sidebar,
+  .sidebar-backdrop,
+  .editor-topbar,
+  .note-meta-bar,
+  .markdown-toolbar,
+  .editor-footer,
+  .toast-container {
+    display: none !important;
+  }
+
+  body,
+  .app-container,
+  .main-content,
+  .editor-workspace {
+    height: auto !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    padding: 0 !important;
+  }
+
+  .note-title-input {
+    border-bottom: 2px solid #ddd;
+    margin-bottom: 20px;
+    font-size: 24pt;
+  }
+
+  .note-textarea {
+    display: none !important;
+  }
+
+  .preview-pane {
+    display: block !important;
+    border: none !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
 }
