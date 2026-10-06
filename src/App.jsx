@@ -106,13 +106,16 @@ export default function App() {
     return () => unsubscribe && unsubscribe();
   }, [checkFirebase]);
 
+  const hasAutoMigratedRef = useRef(false);
+  const notesRef = useRef(notes);
+  notesRef.current = notes;
+
   // Real-time Firestore Cloud Sync when User is authenticated
   useEffect(() => {
     if (!user) return;
     const { db, isConfigured } = getFirebaseServices();
     if (!isConfigured || !db) return;
 
-    setSyncStatus('syncing');
     const userNotesRef = collection(db, 'users', user.uid, 'notes');
 
     const unsubscribe = onSnapshot(
@@ -125,25 +128,28 @@ export default function App() {
 
         if (cloudNotes.length > 0) {
           setNotes(cloudNotes);
-          if (!activeNoteId || !cloudNotes.some((n) => n.id === activeNoteId)) {
-            setActiveNoteId(cloudNotes[0].id);
-          }
-        } else if (snapshot.empty && notes.length > 0) {
-          // Cloud is empty for this user: automatically save all existing notes to Firestore
-          notes.forEach((n) => {
+          setActiveNoteId((prevId) => {
+            if (prevId && cloudNotes.some((n) => n.id === prevId)) {
+              return prevId;
+            }
+            return cloudNotes[0]?.id || null;
+          });
+        } else if (snapshot.empty && !hasAutoMigratedRef.current) {
+          hasAutoMigratedRef.current = true;
+          // Cloud is empty for this user: automatically save current notes once
+          const initialToUpload = notesRef.current || [];
+          initialToUpload.forEach((n) => {
             setDoc(doc(db, 'users', user.uid, 'notes', n.id), n).catch(console.error);
           });
         }
-        setSyncStatus('idle');
       },
       (error) => {
         console.error('Firestore sync error:', error);
-        setSyncStatus('idle');
       }
     );
 
     return () => unsubscribe();
-  }, [user, activeNoteId, notes]);
+  }, [user?.uid]);
 
   // Save notes locally for offline backup
   useEffect(() => {
