@@ -419,6 +419,8 @@ export default function App() {
         isOpen={isCloudModalOpen}
         onClose={() => setIsCloudModalOpen(false)}
         user={user}
+        isFirebaseConfigured={isFirebaseConfigured}
+        onConfigUpdated={checkFirebase}
         addToast={addToast}
       />
 

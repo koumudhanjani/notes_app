@@ -4,21 +4,42 @@ import {
   Cloud,
   CheckCircle2,
   LogOut,
-  ShieldCheck
+  ShieldCheck,
+  Settings,
+  ExternalLink,
+  KeyRound
 } from 'lucide-react';
-import { signInWithGoogle, logOut } from '../firebase';
+import {
+  signInWithGoogle,
+  logOut,
+  getSavedFirebaseConfig,
+  saveFirebaseConfig,
+  clearFirebaseConfig
+} from '../firebase';
 
 export default function CloudSyncModal({
   isOpen,
   onClose,
   user,
+  isFirebaseConfigured,
+  onConfigUpdated,
   addToast
 }) {
   const [isSigningIn, setIsSigningIn] = useState(false);
+  const [showConfigEditor, setShowConfigEditor] = useState(!isFirebaseConfigured);
+  const [configJson, setConfigJson] = useState(() => {
+    const existing = getSavedFirebaseConfig();
+    return existing ? JSON.stringify(existing, null, 2) : '';
+  });
 
   if (!isOpen) return null;
 
   const handleGoogleSignIn = async () => {
+    if (!isFirebaseConfigured) {
+      setShowConfigEditor(true);
+      addToast('Please enter your Firebase configuration below or in .env', 'info');
+      return;
+    }
     try {
       setIsSigningIn(true);
       await signInWithGoogle();
@@ -39,6 +60,42 @@ export default function CloudSyncModal({
     } catch (err) {
       addToast('Error signing out', 'error');
     }
+  };
+
+  const handleSaveConfig = (e) => {
+    e.preventDefault();
+    try {
+      let cleaned = configJson.trim();
+      if (cleaned.startsWith('const firebaseConfig =')) {
+        cleaned = cleaned.replace(/^const\s+firebaseConfig\s*=\s*/, '').replace(/;$/, '');
+      }
+      let parsed;
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch {
+        const jsonLike = cleaned
+          .replace(/([{,]\s*)([a-zA-Z0-9_]+)\s*:/g, '$1"$2":')
+          .replace(/'/g, '"')
+          .replace(/,\s*([}\]])/g, '$1');
+        parsed = JSON.parse(jsonLike);
+      }
+      if (!parsed || !parsed.apiKey || !parsed.projectId) {
+        throw new Error('Config must include at least "apiKey" and "projectId".');
+      }
+      saveFirebaseConfig(parsed);
+      if (onConfigUpdated) onConfigUpdated();
+      addToast('Firebase settings saved locally in your browser!', 'info');
+      setShowConfigEditor(false);
+    } catch (err) {
+      addToast('Invalid configuration: ' + err.message, 'error');
+    }
+  };
+
+  const handleClearConfig = () => {
+    clearFirebaseConfig();
+    setConfigJson('');
+    if (onConfigUpdated) onConfigUpdated();
+    addToast('Firebase configuration removed from browser storage', 'info');
   };
 
   return (
@@ -66,7 +123,9 @@ export default function CloudSyncModal({
           border: '1px solid var(--border-color)',
           boxShadow: 'var(--shadow-lg)',
           width: '100%',
-          maxWidth: '440px',
+          maxWidth: '460px',
+          maxHeight: '90vh',
+          overflowY: 'auto',
           padding: '24px',
           position: 'relative'
         }}
@@ -247,6 +306,89 @@ export default function CloudSyncModal({
             </button>
           </div>
         )}
+
+        {/* Local Firebase Config Accordion (stored only in client browser, never committed) */}
+        <div style={{ marginTop: '16px' }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              cursor: 'pointer',
+              fontSize: '0.82rem',
+              color: 'var(--text-secondary)',
+              padding: '6px 0'
+            }}
+            onClick={() => setShowConfigEditor(!showConfigEditor)}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Settings size={14} />
+              Firebase Config (Browser-only / Private)
+            </span>
+            <span>{showConfigEditor ? 'Hide ▲' : 'Configure ▼'}</span>
+          </div>
+
+          {showConfigEditor && (
+            <form onSubmit={handleSaveConfig} style={{ marginTop: '10px' }}>
+              <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: 1.4 }}>
+                Optionally paste your Firebase project config object here (stored privately in your local browser only, never committed to git) or set environment variables in <code>.env.local</code>:
+              </p>
+              <textarea
+                style={{
+                  width: '100%',
+                  height: '110px',
+                  backgroundColor: 'var(--bg-tertiary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-md)',
+                  color: 'var(--text-primary)',
+                  fontFamily: 'monospace',
+                  fontSize: '0.75rem',
+                  padding: '8px',
+                  outline: 'none',
+                  resize: 'vertical'
+                }}
+                placeholder={`{\n  "apiKey": "...",\n  "authDomain": "...",\n  "projectId": "...",\n  "storageBucket": "...",\n  "messagingSenderId": "...",\n  "appId": "..."\n}`}
+                value={configJson}
+                onChange={(e) => setConfigJson(e.target.value)}
+              />
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
+                <a
+                  href="https://console.firebase.google.com/"
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    fontSize: '0.75rem',
+                    color: 'var(--accent)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    textDecoration: 'none'
+                  }}
+                >
+                  <span>Firebase Console</span>
+                  <ExternalLink size={12} />
+                </a>
+
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {isFirebaseConfigured && (
+                    <button
+                      type="button"
+                      className="filter-pill"
+                      onClick={handleClearConfig}
+                      style={{ color: 'var(--danger)' }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                  <button type="submit" className="filter-pill active">
+                    Save to Browser
+                  </button>
+                </div>
+              </div>
+            </form>
+          )}
+        </div>
       </div>
     </div>
   );
