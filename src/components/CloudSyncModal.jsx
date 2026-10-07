@@ -9,7 +9,7 @@ import {
   ExternalLink,
   KeyRound,
   AlertCircle,
-  RefreshCw
+  Edit3
 } from 'lucide-react';
 import {
   signInWithGoogle,
@@ -19,6 +19,7 @@ import {
   parseFirebaseConfigInput,
   saveFirebaseConfig,
   clearFirebaseConfig,
+  isApiKeyExpired,
   DEFAULT_PROJECT_CONFIG
 } from '../firebase';
 
@@ -31,12 +32,14 @@ export default function CloudSyncModal({
   addToast
 }) {
   const [isSigningIn, setIsSigningIn] = useState(false);
-  const [showConfigEditor, setShowConfigEditor] = useState(false);
   const activeServices = getFirebaseServices();
-  const [isKeyExpired, setIsKeyExpired] = useState(() => Boolean(activeServices.isExpired));
+  const savedConfig = getSavedFirebaseConfig();
+  const currentKeyExpired = isApiKeyExpired(savedConfig?.apiKey) || Boolean(activeServices.isExpired);
+  
+  const [isKeyExpired, setIsKeyExpired] = useState(currentKeyExpired);
+  const [showConfigEditor, setShowConfigEditor] = useState(!isFirebaseConfigured || currentKeyExpired);
   const [configInput, setConfigInput] = useState(() => {
-    const existing = getSavedFirebaseConfig();
-    return existing ? JSON.stringify(existing, null, 2) : '';
+    return savedConfig?.apiKey || '';
   });
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -46,8 +49,9 @@ export default function CloudSyncModal({
     setErrorMessage('');
     if (!isFirebaseConfigured || isKeyExpired) {
       setIsKeyExpired(true);
-      setErrorMessage('Your Firebase API key is expired. Please enter an active API key below.');
-      addToast('Your Firebase API key is expired. Please enter an active key.', 'error');
+      setShowConfigEditor(true);
+      setErrorMessage('Your Firebase API key is expired or missing. Please enter an active key below.');
+      addToast('Please enter an active Firebase API key below.', 'error');
       return;
     }
     try {
@@ -68,6 +72,7 @@ export default function CloudSyncModal({
 
       if (isExpiredErr) {
         setIsKeyExpired(true);
+        setShowConfigEditor(true);
         msg = 'Your Firebase API key has expired. Please renew or create a key in Google Cloud / Firebase Console.';
       } else if (err.code === 'auth/unauthorized-domain') {
         const domain = typeof window !== 'undefined' ? window.location.hostname : 'your domain';
@@ -100,12 +105,12 @@ export default function CloudSyncModal({
       const parsed = parseFirebaseConfigInput(configInput);
       await saveFirebaseConfig(parsed);
       setIsKeyExpired(false);
-      if (onConfigUpdated) onConfigUpdated();
-      addToast('Firebase settings connected successfully!', 'info');
       setShowConfigEditor(false);
+      if (onConfigUpdated) onConfigUpdated();
+      addToast('Firebase key connected successfully!', 'info');
     } catch (err) {
       setErrorMessage(err.message);
-      addToast('Configuration error: ' + err.message, 'error');
+      addToast(err.message, 'error');
     }
   };
 
@@ -113,9 +118,10 @@ export default function CloudSyncModal({
     await clearFirebaseConfig();
     setConfigInput('');
     setIsKeyExpired(false);
+    setShowConfigEditor(true);
     setErrorMessage('');
     if (onConfigUpdated) onConfigUpdated();
-    addToast('Firebase configuration removed from browser storage', 'info');
+    addToast('Firebase configuration cleared', 'info');
   };
 
   return (
@@ -126,8 +132,8 @@ export default function CloudSyncModal({
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.55)',
-        backdropFilter: 'blur(4px)',
+        backgroundColor: 'rgba(0, 0, 0, 0.65)',
+        backdropFilter: 'blur(5px)',
         zIndex: 1000,
         display: 'flex',
         alignItems: 'center',
@@ -143,8 +149,8 @@ export default function CloudSyncModal({
           border: '1px solid var(--border-color)',
           boxShadow: 'var(--shadow-lg)',
           width: '100%',
-          maxWidth: '480px',
-          maxHeight: '90vh',
+          maxWidth: '490px',
+          maxHeight: '92vh',
           overflowY: 'auto',
           padding: '24px',
           position: 'relative'
@@ -169,9 +175,9 @@ export default function CloudSyncModal({
               <Cloud size={20} />
             </div>
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Cloud Sync Account</h3>
+              <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Cloud Account</h3>
               <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                Multi-device real-time note synchronization
+                Multi-device automatic synchronization
               </p>
             </div>
           </div>
@@ -191,20 +197,20 @@ export default function CloudSyncModal({
           <div
             style={{
               padding: '14px 16px',
-              backgroundColor: 'rgba(239, 68, 68, 0.08)',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
+              backgroundColor: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.35)',
               borderRadius: 'var(--radius-md)',
               marginBottom: '16px'
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ef4444', fontWeight: 600, fontSize: '0.9rem', marginBottom: '6px' }}>
               <AlertCircle size={18} />
-              <span>Firebase API Key Expired</span>
+              <span>API Key Expired (Please Enter Active Key)</span>
             </div>
-            <p style={{ margin: '0 0 10px 0', fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
-              Google automatically deactivated your old API key when it was exposed on GitHub. Please create or copy your active key from Google Cloud Console or Firebase Console:
+            <p style={{ margin: '0 0 10px 0', fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+              Google automatically deactivated your old key when it was exposed on GitHub. To restore cloud sync, generate or copy a fresh active key from Google Cloud Console or Firebase Console:
             </p>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <a
                 href={`https://console.cloud.google.com/apis/credentials?project=${DEFAULT_PROJECT_CONFIG.projectId}`}
                 target="_blank"
@@ -243,7 +249,7 @@ export default function CloudSyncModal({
           </div>
         )}
 
-        {/* General Error Callout if any other error */}
+        {/* General Error Callout */}
         {errorMessage && !isKeyExpired && (
           <div
             style={{
@@ -264,9 +270,8 @@ export default function CloudSyncModal({
           </div>
         )}
 
-        {/* Main Content Area */}
+        {/* User Card when signed in */}
         {user ? (
-          /* User signed in */
           <div
             style={{
               padding: '18px',
@@ -354,210 +359,171 @@ export default function CloudSyncModal({
               <span>Sign Out</span>
             </button>
           </div>
-        ) : isFirebaseConfigured && !isKeyExpired ? (
-          /* Firebase configured, ready for Google sign in */
-          <div
-            style={{
-              padding: '24px 16px',
-              backgroundColor: 'var(--bg-tertiary)',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border-color)',
-              textAlign: 'center'
-            }}
-          >
-            <ShieldCheck size={40} color="var(--accent)" style={{ marginBottom: '10px' }} />
-            <h4 style={{ marginBottom: '6px', fontSize: '1rem' }}>Sign in to Auto-Sync</h4>
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '18px', maxWidth: '340px', margin: '0 auto 18px', lineHeight: 1.5 }}>
-              Sign in with your Google account. All notes will automatically save and sync across your phone, tablet, and laptop in real time.
-            </p>
-            <button
-              type="button"
-              className="btn-new-note"
-              onClick={handleGoogleSignIn}
-              disabled={isSigningIn}
-              style={{
-                backgroundColor: '#ffffff',
-                color: '#1f2937',
-                border: '1px solid #d1d5db',
-                boxShadow: 'var(--shadow-sm)',
-                margin: '0 auto',
-                maxWidth: '260px',
-                padding: '10px 16px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '10px',
-                fontWeight: 600
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                />
-              </svg>
-              <span>{isSigningIn ? 'Connecting...' : 'Sign in with Google'}</span>
-            </button>
-          </div>
         ) : (
-          /* Firebase setup required OR key expired */
-          <div
-            style={{
-              padding: '20px 16px',
-              backgroundColor: 'var(--bg-tertiary)',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border-color)'
-            }}
-          >
-            <div style={{ textAlign: 'center', marginBottom: '14px' }}>
-              <KeyRound size={34} color="var(--accent)" style={{ marginBottom: '6px' }} />
-              <h4 style={{ margin: '0 0 6px 0', fontSize: '1rem' }}>
-                {isKeyExpired ? 'Enter New Active API Key' : 'Connect Cloud Storage'}
-              </h4>
-              <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                Paste your active API key (starts with <code>AIzaSy...</code>) below to connect your project:
-              </p>
-            </div>
-
-            <form onSubmit={handleSaveConfig}>
-              <textarea
-                style={{
-                  width: '100%',
-                  height: '80px',
-                  backgroundColor: 'var(--bg-secondary)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: 'var(--radius-md)',
-                  color: 'var(--text-primary)',
-                  fontFamily: 'monospace',
-                  fontSize: '0.8rem',
-                  padding: '10px',
-                  outline: 'none',
-                  resize: 'vertical',
-                  boxSizing: 'border-box'
-                }}
-                placeholder="Paste active API Key (AIzaSy...) here"
-                value={configInput}
-                onChange={(e) => setConfigInput(e.target.value)}
-              />
-
+          /* When NOT signed in */
+          <div>
+            {/* Google Sign In Card (Only if configured and not expired) */}
+            {isFirebaseConfigured && !isKeyExpired && !showConfigEditor && (
               <div
                 style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginTop: '10px',
-                  gap: '8px',
-                  flexWrap: 'wrap'
+                  padding: '24px 16px',
+                  backgroundColor: 'var(--bg-tertiary)',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border-color)',
+                  textAlign: 'center',
+                  marginBottom: '16px'
                 }}
               >
+                <ShieldCheck size={42} color="var(--accent)" style={{ marginBottom: '10px' }} />
+                <h4 style={{ marginBottom: '6px', fontSize: '1.05rem' }}>Sign in to Auto-Sync</h4>
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '18px', maxWidth: '340px', margin: '0 auto 18px', lineHeight: 1.5 }}>
+                  Sign in with your Google account. All notes will automatically save and sync across your phone, tablet, and laptop in real time.
+                </p>
                 <button
                   type="button"
-                  className="filter-pill"
-                  onClick={handleClearConfig}
-                  style={{ color: 'var(--danger)', fontSize: '0.75rem' }}
-                >
-                  Reset Key
-                </button>
-
-                <button type="submit" className="filter-pill active" style={{ padding: '6px 16px' }}>
-                  Save &amp; Connect Key
-                </button>
-              </div>
-
-              <div
-                style={{
-                  marginTop: '12px',
-                  padding: '8px 10px',
-                  backgroundColor: 'var(--bg-secondary)',
-                  borderRadius: 'var(--radius-sm)',
-                  fontSize: '0.73rem',
-                  color: 'var(--text-muted)',
-                  lineHeight: 1.4
-                }}
-              >
-                🔒 <strong>Saved securely in your browser:</strong> Stored strictly in local browser storage on this device, never committed to GitHub.
-              </div>
-            </form>
-          </div>
-        )}
-
-        {/* Firebase Config Accordion (for modifying or clearing when configured) */}
-        {isFirebaseConfigured && !isKeyExpired && (
-          <div style={{ marginTop: '14px' }}>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                cursor: 'pointer',
-                fontSize: '0.78rem',
-                color: 'var(--text-muted)',
-                padding: '4px 2px'
-              }}
-              onClick={() => setShowConfigEditor(!showConfigEditor)}
-            >
-              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Settings size={13} />
-                Firebase Settings (Project: {DEFAULT_PROJECT_CONFIG.projectId})
-              </span>
-              <span>{showConfigEditor ? '▲ Hide' : '▼ Manage'}</span>
-            </div>
-
-            {showConfigEditor && (
-              <form onSubmit={handleSaveConfig} style={{ marginTop: '8px' }}>
-                <textarea
+                  className="btn-new-note"
+                  onClick={handleGoogleSignIn}
+                  disabled={isSigningIn}
                   style={{
-                    width: '100%',
-                    height: '80px',
-                    backgroundColor: 'var(--bg-tertiary)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: 'var(--radius-md)',
-                    color: 'var(--text-primary)',
-                    fontFamily: 'monospace',
-                    fontSize: '0.75rem',
-                    padding: '8px',
-                    outline: 'none',
-                    resize: 'vertical',
-                    boxSizing: 'border-box'
-                  }}
-                  placeholder="Paste new Firebase API Key (AIzaSy...)"
-                  value={configInput}
-                  onChange={(e) => setConfigInput(e.target.value)}
-                />
-
-                <div
-                  style={{
+                    backgroundColor: '#ffffff',
+                    color: '#1f2937',
+                    border: '1px solid #d1d5db',
+                    boxShadow: 'var(--shadow-sm)',
+                    margin: '0 auto',
+                    maxWidth: '260px',
+                    padding: '10px 18px',
                     display: 'flex',
-                    justifyContent: 'space-between',
                     alignItems: 'center',
-                    marginTop: '8px'
+                    justifyContent: 'center',
+                    gap: '10px',
+                    fontWeight: 600
                   }}
                 >
+                  <svg width="18" height="18" viewBox="0 0 24 24">
+                    <path
+                      fill="#4285F4"
+                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                    />
+                  </svg>
+                  <span>{isSigningIn ? 'Connecting...' : 'Sign in with Google'}</span>
+                </button>
+
+                <div style={{ marginTop: '14px' }}>
                   <button
                     type="button"
-                    className="filter-pill"
-                    onClick={handleClearConfig}
-                    style={{ color: 'var(--danger)', fontSize: '0.75rem' }}
+                    onClick={() => setShowConfigEditor(true)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-muted)',
+                      fontSize: '0.75rem',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      textDecoration: 'underline'
+                    }}
                   >
-                    Clear Config
-                  </button>
-                  <button type="submit" className="filter-pill active" style={{ fontSize: '0.75rem' }}>
-                    Update Config
+                    <Edit3 size={12} />
+                    <span>Change Firebase Key</span>
                   </button>
                 </div>
-              </form>
+              </div>
+            )}
+
+            {/* Paste API Key Form (Shown when expired, missing, or when user clicks Change) */}
+            {(!isFirebaseConfigured || isKeyExpired || showConfigEditor) && (
+              <div
+                style={{
+                  padding: '20px 16px',
+                  backgroundColor: 'var(--bg-tertiary)',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border-color)',
+                  marginBottom: '16px'
+                }}
+              >
+                <div style={{ textAlign: 'center', marginBottom: '14px' }}>
+                  <KeyRound size={34} color="var(--accent)" style={{ marginBottom: '6px' }} />
+                  <h4 style={{ margin: '0 0 6px 0', fontSize: '1rem' }}>
+                    Enter Active Firebase API Key
+                  </h4>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                    Paste your active API key (starts with <code>AIzaSy...</code>) or configuration snippet below:
+                  </p>
+                </div>
+
+                <form onSubmit={handleSaveConfig}>
+                  <textarea
+                    style={{
+                      width: '100%',
+                      height: '85px',
+                      backgroundColor: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 'var(--radius-md)',
+                      color: 'var(--text-primary)',
+                      fontFamily: 'monospace',
+                      fontSize: '0.8rem',
+                      padding: '10px',
+                      outline: 'none',
+                      resize: 'vertical',
+                      boxSizing: 'border-box'
+                    }}
+                    placeholder="Paste active API Key (AIzaSy...) here"
+                    value={configInput}
+                    onChange={(e) => setConfigInput(e.target.value)}
+                  />
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginTop: '10px',
+                      gap: '8px',
+                      flexWrap: 'wrap'
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="filter-pill"
+                      onClick={handleClearConfig}
+                      style={{ color: 'var(--danger)', fontSize: '0.75rem' }}
+                    >
+                      Clear Key
+                    </button>
+
+                    <button type="submit" className="filter-pill active" style={{ padding: '6px 16px', fontWeight: 600 }}>
+                      Save &amp; Connect Key
+                    </button>
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: '12px',
+                      padding: '8px 10px',
+                      backgroundColor: 'var(--bg-secondary)',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: '0.73rem',
+                      color: 'var(--text-muted)',
+                      lineHeight: 1.4
+                    }}
+                  >
+                    🔒 <strong>Stored privately in your browser:</strong> Saved strictly in local browser storage on this device, never committed to GitHub.
+                  </div>
+                </form>
+              </div>
             )}
           </div>
         )}

@@ -30,12 +30,11 @@ export const DEFAULT_PROJECT_CONFIG = {
   measurementId: 'G-GE41MV7M9W'
 };
 
-// Known key that was automatically invalidated by Google Cloud upon public exposure
-export const KNOWN_EXPIRED_KEY = 'AIzaSyAeiPI6DANPd6BiwclB2esUDw0EXeJMTrs';
-
+// Check if key is the old one that was invalidated by Google upon public exposure
 export function isApiKeyExpired(key) {
   if (!key) return false;
-  return key.trim() === KNOWN_EXPIRED_KEY;
+  const trimmed = key.trim();
+  return trimmed.endsWith('JMTrs');
 }
 
 // Robust parser that supports:
