@@ -89,23 +89,35 @@ export default function App() {
   };
 
   // Initialize and observe Firebase Authentication
+  const authUnsubRef = useRef(null);
+
   const checkFirebase = useCallback(() => {
+    if (authUnsubRef.current) {
+      authUnsubRef.current();
+      authUnsubRef.current = null;
+    }
     const { auth, isConfigured } = getFirebaseServices();
     setIsFirebaseConfigured(isConfigured);
     if (isConfigured && auth) {
-      return onAuthStateChanged(auth, (currentUser) => {
+      authUnsubRef.current = onAuthStateChanged(auth, (currentUser) => {
         setUser(currentUser);
         if (currentUser) {
           addToast(`Signed in as ${currentUser.displayName || currentUser.email}`, 'info');
         }
       });
+    } else {
+      setUser(null);
     }
-    return () => {};
   }, [addToast]);
 
   useEffect(() => {
-    const unsubscribe = checkFirebase();
-    return () => unsubscribe && unsubscribe();
+    checkFirebase();
+    return () => {
+      if (authUnsubRef.current) {
+        authUnsubRef.current();
+        authUnsubRef.current = null;
+      }
+    };
   }, [checkFirebase]);
 
   const hasAutoMigratedRef = useRef(false);

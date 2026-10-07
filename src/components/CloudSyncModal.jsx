@@ -7,14 +7,17 @@ import {
   ShieldCheck,
   Settings,
   ExternalLink,
-  KeyRound
+  KeyRound,
+  AlertCircle
 } from 'lucide-react';
 import {
   signInWithGoogle,
   logOut,
   getSavedFirebaseConfig,
+  parseFirebaseConfigInput,
   saveFirebaseConfig,
-  clearFirebaseConfig
+  clearFirebaseConfig,
+  DEFAULT_PROJECT_CONFIG
 } from '../firebase';
 
 export default function CloudSyncModal({
@@ -26,28 +29,46 @@ export default function CloudSyncModal({
   addToast
 }) {
   const [isSigningIn, setIsSigningIn] = useState(false);
-  const [showConfigEditor, setShowConfigEditor] = useState(!isFirebaseConfigured);
-  const [configJson, setConfigJson] = useState(() => {
+  const [showConfigEditor, setShowConfigEditor] = useState(false);
+  const [configInput, setConfigInput] = useState(() => {
     const existing = getSavedFirebaseConfig();
     return existing ? JSON.stringify(existing, null, 2) : '';
   });
+  const [errorMessage, setErrorMessage] = useState('');
 
   if (!isOpen) return null;
 
   const handleGoogleSignIn = async () => {
+    setErrorMessage('');
     if (!isFirebaseConfigured) {
-      setShowConfigEditor(true);
-      addToast('Please enter your Firebase configuration below or in .env', 'info');
+      addToast('Please connect your Firebase configuration first.', 'info');
       return;
     }
     try {
       setIsSigningIn(true);
       await signInWithGoogle();
-      addToast('Signed in successfully! Notes will auto-sync.', 'info');
+      addToast('Signed in successfully! Notes will auto-sync across devices.', 'info');
       onClose();
     } catch (err) {
-      console.error(err);
-      addToast(err.message || 'Failed to sign in with Google', 'error');
+      console.error('Google Sign-in error:', err);
+      let msg = err.message || 'Failed to sign in with Google';
+      if (
+        err.code === 'auth/invalid-api-key' ||
+        err.code === 'auth/api-key-not-valid' ||
+        msg.includes('API key expired') ||
+        msg.includes('api-key-not-valid')
+      ) {
+        msg = 'Your Firebase API key is expired or invalid. Please renew or create a key in the Firebase Console.';
+      } else if (err.code === 'auth/unauthorized-domain') {
+        const domain = typeof window !== 'undefined' ? window.location.hostname : 'your domain';
+        msg = `Domain not authorized (${domain}). Add it to Firebase Console > Authentication > Settings > Authorized domains.`;
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        msg = 'Sign-in window was closed.';
+      } else if (err.code === 'auth/popup-blocked') {
+        msg = 'Sign-in popup was blocked by your browser. Please allow popups for this site.';
+      }
+      setErrorMessage(msg);
+      addToast(msg, 'error');
     } finally {
       setIsSigningIn(false);
     }
@@ -58,42 +79,29 @@ export default function CloudSyncModal({
       await logOut();
       addToast('Signed out of cloud sync', 'info');
     } catch (err) {
-      addToast('Error signing out', 'error');
+      addToast('Error signing out: ' + err.message, 'error');
     }
   };
 
-  const handleSaveConfig = (e) => {
+  const handleSaveConfig = async (e) => {
     e.preventDefault();
+    setErrorMessage('');
     try {
-      let cleaned = configJson.trim();
-      if (cleaned.startsWith('const firebaseConfig =')) {
-        cleaned = cleaned.replace(/^const\s+firebaseConfig\s*=\s*/, '').replace(/;$/, '');
-      }
-      let parsed;
-      try {
-        parsed = JSON.parse(cleaned);
-      } catch {
-        const jsonLike = cleaned
-          .replace(/([{,]\s*)([a-zA-Z0-9_]+)\s*:/g, '$1"$2":')
-          .replace(/'/g, '"')
-          .replace(/,\s*([}\]])/g, '$1');
-        parsed = JSON.parse(jsonLike);
-      }
-      if (!parsed || !parsed.apiKey || !parsed.projectId) {
-        throw new Error('Config must include at least "apiKey" and "projectId".');
-      }
-      saveFirebaseConfig(parsed);
+      const parsed = parseFirebaseConfigInput(configInput);
+      await saveFirebaseConfig(parsed);
       if (onConfigUpdated) onConfigUpdated();
-      addToast('Firebase settings saved locally in your browser!', 'info');
+      addToast('Firebase settings connected successfully!', 'info');
       setShowConfigEditor(false);
     } catch (err) {
-      addToast('Invalid configuration: ' + err.message, 'error');
+      setErrorMessage(err.message);
+      addToast('Configuration error: ' + err.message, 'error');
     }
   };
 
-  const handleClearConfig = () => {
-    clearFirebaseConfig();
-    setConfigJson('');
+  const handleClearConfig = async () => {
+    await clearFirebaseConfig();
+    setConfigInput('');
+    setErrorMessage('');
     if (onConfigUpdated) onConfigUpdated();
     addToast('Firebase configuration removed from browser storage', 'info');
   };
@@ -106,7 +114,7 @@ export default function CloudSyncModal({
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        backgroundColor: 'rgba(0, 0, 0, 0.55)',
         backdropFilter: 'blur(4px)',
         zIndex: 1000,
         display: 'flex',
@@ -123,7 +131,7 @@ export default function CloudSyncModal({
           border: '1px solid var(--border-color)',
           boxShadow: 'var(--shadow-lg)',
           width: '100%',
-          maxWidth: '460px',
+          maxWidth: '470px',
           maxHeight: '90vh',
           overflowY: 'auto',
           padding: '24px',
@@ -136,9 +144,9 @@ export default function CloudSyncModal({
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div
               style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '8px',
+                width: '38px',
+                height: '38px',
+                borderRadius: '10px',
                 backgroundColor: 'var(--accent-light)',
                 color: 'var(--accent)',
                 display: 'flex',
@@ -149,9 +157,9 @@ export default function CloudSyncModal({
               <Cloud size={20} />
             </div>
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Cloud Account</h3>
+              <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Cloud Sync Account</h3>
               <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                Multi-device automatic synchronization
+                Multi-device real-time note synchronization
               </p>
             </div>
           </div>
@@ -160,13 +168,36 @@ export default function CloudSyncModal({
             className="icon-btn"
             onClick={onClose}
             style={{ padding: '6px' }}
+            title="Close"
           >
             <X size={18} />
           </button>
         </div>
 
-        {/* User Card */}
+        {/* Error Callout if any */}
+        {errorMessage && (
+          <div
+            style={{
+              padding: '12px 14px',
+              backgroundColor: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.25)',
+              borderRadius: 'var(--radius-md)',
+              marginBottom: '16px',
+              display: 'flex',
+              gap: '10px',
+              alignItems: 'flex-start',
+              fontSize: '0.8rem',
+              color: '#ef4444'
+            }}
+          >
+            <AlertCircle size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
+            <div>{errorMessage}</div>
+          </div>
+        )}
+
+        {/* Main Content Area */}
         {user ? (
+          /* User signed in */
           <div
             style={{
               padding: '18px',
@@ -254,7 +285,8 @@ export default function CloudSyncModal({
               <span>Sign Out</span>
             </button>
           </div>
-        ) : (
+        ) : isFirebaseConfigured ? (
+          /* Firebase configured, ready for Google sign in */
           <div
             style={{
               padding: '24px 16px',
@@ -264,9 +296,9 @@ export default function CloudSyncModal({
               textAlign: 'center'
             }}
           >
-            <ShieldCheck size={38} color="var(--accent)" style={{ marginBottom: '10px' }} />
-            <h4 style={{ marginBottom: '6px' }}>Sign in to Auto-Sync</h4>
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '18px', maxWidth: '340px', margin: '0 auto 18px' }}>
+            <ShieldCheck size={40} color="var(--accent)" style={{ marginBottom: '10px' }} />
+            <h4 style={{ marginBottom: '6px', fontSize: '1rem' }}>Sign in to Auto-Sync</h4>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '18px', maxWidth: '340px', margin: '0 auto 18px', lineHeight: 1.5 }}>
               Sign in with your Google account. All notes will automatically save and sync across your phone, tablet, and laptop in real time.
             </p>
             <button
@@ -281,7 +313,12 @@ export default function CloudSyncModal({
                 boxShadow: 'var(--shadow-sm)',
                 margin: '0 auto',
                 maxWidth: '260px',
-                padding: '10px 16px'
+                padding: '10px 16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '10px',
+                fontWeight: 600
               }}
             >
               <svg width="18" height="18" viewBox="0 0 24 24">
@@ -305,60 +342,61 @@ export default function CloudSyncModal({
               <span>{isSigningIn ? 'Connecting...' : 'Sign in with Google'}</span>
             </button>
           </div>
-        )}
-
-        {/* Local Firebase Config Accordion (stored only in client browser, never committed) */}
-        <div style={{ marginTop: '16px' }}>
+        ) : (
+          /* Firebase setup required */
           <div
             style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              cursor: 'pointer',
-              fontSize: '0.82rem',
-              color: 'var(--text-secondary)',
-              padding: '6px 0'
+              padding: '20px 16px',
+              backgroundColor: 'var(--bg-tertiary)',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border-color)'
             }}
-            onClick={() => setShowConfigEditor(!showConfigEditor)}
           >
-            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Settings size={14} />
-              Firebase Config (Browser-only / Private)
-            </span>
-            <span>{showConfigEditor ? 'Hide ▲' : 'Configure ▼'}</span>
-          </div>
-
-          {showConfigEditor && (
-            <form onSubmit={handleSaveConfig} style={{ marginTop: '10px' }}>
-              <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: 1.4 }}>
-                Optionally paste your Firebase project config object here (stored privately in your local browser only, never committed to git) or set environment variables in <code>.env.local</code>:
+            <div style={{ textAlign: 'center', marginBottom: '14px' }}>
+              <KeyRound size={34} color="var(--accent)" style={{ marginBottom: '6px' }} />
+              <h4 style={{ margin: '0 0 6px 0', fontSize: '1rem' }}>Connect Cloud Storage</h4>
+              <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                Enter your Firebase API key or configuration to enable Google sign-in and cloud synchronization across your devices:
               </p>
+            </div>
+
+            <form onSubmit={handleSaveConfig}>
               <textarea
                 style={{
                   width: '100%',
-                  height: '110px',
-                  backgroundColor: 'var(--bg-tertiary)',
+                  height: '90px',
+                  backgroundColor: 'var(--bg-secondary)',
                   border: '1px solid var(--border-color)',
                   borderRadius: 'var(--radius-md)',
                   color: 'var(--text-primary)',
                   fontFamily: 'monospace',
-                  fontSize: '0.75rem',
-                  padding: '8px',
+                  fontSize: '0.8rem',
+                  padding: '10px',
                   outline: 'none',
-                  resize: 'vertical'
+                  resize: 'vertical',
+                  boxSizing: 'border-box'
                 }}
-                placeholder={`{\n  "apiKey": "...",\n  "authDomain": "...",\n  "projectId": "...",\n  "storageBucket": "...",\n  "messagingSenderId": "...",\n  "appId": "..."\n}`}
-                value={configJson}
-                onChange={(e) => setConfigJson(e.target.value)}
+                placeholder="Paste Firebase API Key (AIzaSy...) or configuration snippet here"
+                value={configInput}
+                onChange={(e) => setConfigInput(e.target.value)}
               />
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginTop: '10px',
+                  gap: '8px',
+                  flexWrap: 'wrap'
+                }}
+              >
                 <a
-                  href="https://console.firebase.google.com/"
+                  href={`https://console.firebase.google.com/project/${DEFAULT_PROJECT_CONFIG.projectId}/overview`}
                   target="_blank"
                   rel="noreferrer"
                   style={{
-                    fontSize: '0.75rem',
+                    fontSize: '0.76rem',
                     color: 'var(--accent)',
                     display: 'flex',
                     alignItems: 'center',
@@ -366,29 +404,100 @@ export default function CloudSyncModal({
                     textDecoration: 'none'
                   }}
                 >
-                  <span>Firebase Console</span>
+                  <span>Open Firebase Console</span>
                   <ExternalLink size={12} />
                 </a>
 
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  {isFirebaseConfigured && (
-                    <button
-                      type="button"
-                      className="filter-pill"
-                      onClick={handleClearConfig}
-                      style={{ color: 'var(--danger)' }}
-                    >
-                      Clear
-                    </button>
-                  )}
-                  <button type="submit" className="filter-pill active">
-                    Save to Browser
-                  </button>
-                </div>
+                <button type="submit" className="filter-pill active" style={{ padding: '6px 14px' }}>
+                  Connect &amp; Save
+                </button>
+              </div>
+
+              <div
+                style={{
+                  marginTop: '12px',
+                  padding: '8px 10px',
+                  backgroundColor: 'var(--bg-secondary)',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '0.73rem',
+                  color: 'var(--text-muted)',
+                  lineHeight: 1.4
+                }}
+              >
+                🔒 <strong>Stored privately in your browser:</strong> Saved only in your device's private browser memory (localStorage) and never uploaded to Git.
               </div>
             </form>
-          )}
-        </div>
+          </div>
+        )}
+
+        {/* Firebase Config Accordion (for modifying or clearing when configured) */}
+        {isFirebaseConfigured && (
+          <div style={{ marginTop: '14px' }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                cursor: 'pointer',
+                fontSize: '0.78rem',
+                color: 'var(--text-muted)',
+                padding: '4px 2px'
+              }}
+              onClick={() => setShowConfigEditor(!showConfigEditor)}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Settings size={13} />
+                Firebase Settings (Project: {DEFAULT_PROJECT_CONFIG.projectId})
+              </span>
+              <span>{showConfigEditor ? '▲ Hide' : '▼ Manage'}</span>
+            </div>
+
+            {showConfigEditor && (
+              <form onSubmit={handleSaveConfig} style={{ marginTop: '8px' }}>
+                <textarea
+                  style={{
+                    width: '100%',
+                    height: '90px',
+                    backgroundColor: 'var(--bg-tertiary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 'var(--radius-md)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'monospace',
+                    fontSize: '0.75rem',
+                    padding: '8px',
+                    outline: 'none',
+                    resize: 'vertical',
+                    boxSizing: 'border-box'
+                  }}
+                  placeholder="Paste new Firebase API Key (AIzaSy...) or configuration snippet"
+                  value={configInput}
+                  onChange={(e) => setConfigInput(e.target.value)}
+                />
+
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginTop: '8px'
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="filter-pill"
+                    onClick={handleClearConfig}
+                    style={{ color: 'var(--danger)', fontSize: '0.75rem' }}
+                  >
+                    Clear Config
+                  </button>
+                  <button type="submit" className="filter-pill active" style={{ fontSize: '0.75rem' }}>
+                    Update Config
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
