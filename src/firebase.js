@@ -30,6 +30,14 @@ export const DEFAULT_PROJECT_CONFIG = {
   measurementId: 'G-GE41MV7M9W'
 };
 
+// Known key that was automatically invalidated by Google Cloud upon public exposure
+export const KNOWN_EXPIRED_KEY = 'AIzaSyAeiPI6DANPd6BiwclB2esUDw0EXeJMTrs';
+
+export function isApiKeyExpired(key) {
+  if (!key) return false;
+  return key.trim() === KNOWN_EXPIRED_KEY;
+}
+
 // Robust parser that supports:
 // 1. Raw API key string (e.g. AIzaSy...)
 // 2. Full JS snippet from Firebase Console (including comments and const firebaseConfig = {...})
@@ -177,9 +185,17 @@ const googleProvider = new GoogleAuthProvider();
 
 export function getFirebaseServices(config = null) {
   const activeConfig = config || getSavedFirebaseConfig();
+  const isExpired = isApiKeyExpired(activeConfig?.apiKey);
 
-  if (!activeConfig || !activeConfig.apiKey || !activeConfig.projectId) {
-    return { app: null, auth: null, db: null, isConfigured: false, config: activeConfig };
+  if (!activeConfig || !activeConfig.apiKey || !activeConfig.projectId || isExpired) {
+    return {
+      app: null,
+      auth: null,
+      db: null,
+      isConfigured: false,
+      isExpired,
+      config: activeConfig
+    };
   }
 
   try {
@@ -196,11 +212,20 @@ export function getFirebaseServices(config = null) {
       auth: authInstance,
       db: firestoreInstance,
       isConfigured: true,
+      isExpired: false,
       config: activeConfig
     };
   } catch (err) {
     console.error('Firebase initialization error:', err);
-    return { app: null, auth: null, db: null, isConfigured: false, error: err.message, config: activeConfig };
+    return {
+      app: null,
+      auth: null,
+      db: null,
+      isConfigured: false,
+      isExpired: false,
+      error: err.message,
+      config: activeConfig
+    };
   }
 }
 

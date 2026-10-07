@@ -8,12 +8,14 @@ import {
   Settings,
   ExternalLink,
   KeyRound,
-  AlertCircle
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 import {
   signInWithGoogle,
   logOut,
   getSavedFirebaseConfig,
+  getFirebaseServices,
   parseFirebaseConfigInput,
   saveFirebaseConfig,
   clearFirebaseConfig,
@@ -30,6 +32,8 @@ export default function CloudSyncModal({
 }) {
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [showConfigEditor, setShowConfigEditor] = useState(false);
+  const activeServices = getFirebaseServices();
+  const [isKeyExpired, setIsKeyExpired] = useState(() => Boolean(activeServices.isExpired));
   const [configInput, setConfigInput] = useState(() => {
     const existing = getSavedFirebaseConfig();
     return existing ? JSON.stringify(existing, null, 2) : '';
@@ -40,8 +44,10 @@ export default function CloudSyncModal({
 
   const handleGoogleSignIn = async () => {
     setErrorMessage('');
-    if (!isFirebaseConfigured) {
-      addToast('Please connect your Firebase configuration first.', 'info');
+    if (!isFirebaseConfigured || isKeyExpired) {
+      setIsKeyExpired(true);
+      setErrorMessage('Your Firebase API key is expired. Please enter an active API key below.');
+      addToast('Your Firebase API key is expired. Please enter an active key.', 'error');
       return;
     }
     try {
@@ -52,13 +58,17 @@ export default function CloudSyncModal({
     } catch (err) {
       console.error('Google Sign-in error:', err);
       let msg = err.message || 'Failed to sign in with Google';
-      if (
+      const isExpiredErr =
+        err.code === 'auth/api-key-expired' ||
         err.code === 'auth/invalid-api-key' ||
-        err.code === 'auth/api-key-not-valid' ||
-        msg.includes('API key expired') ||
-        msg.includes('api-key-not-valid')
-      ) {
-        msg = 'Your Firebase API key is expired or invalid. Please renew or create a key in the Firebase Console.';
+        (typeof err.code === 'string' && err.code.includes('api-key')) ||
+        msg.toLowerCase().includes('api-key-expired') ||
+        msg.toLowerCase().includes('renew-the-api-key') ||
+        msg.toLowerCase().includes('api key expired');
+
+      if (isExpiredErr) {
+        setIsKeyExpired(true);
+        msg = 'Your Firebase API key has expired. Please renew or create a key in Google Cloud / Firebase Console.';
       } else if (err.code === 'auth/unauthorized-domain') {
         const domain = typeof window !== 'undefined' ? window.location.hostname : 'your domain';
         msg = `Domain not authorized (${domain}). Add it to Firebase Console > Authentication > Settings > Authorized domains.`;
@@ -89,6 +99,7 @@ export default function CloudSyncModal({
     try {
       const parsed = parseFirebaseConfigInput(configInput);
       await saveFirebaseConfig(parsed);
+      setIsKeyExpired(false);
       if (onConfigUpdated) onConfigUpdated();
       addToast('Firebase settings connected successfully!', 'info');
       setShowConfigEditor(false);
@@ -101,6 +112,7 @@ export default function CloudSyncModal({
   const handleClearConfig = async () => {
     await clearFirebaseConfig();
     setConfigInput('');
+    setIsKeyExpired(false);
     setErrorMessage('');
     if (onConfigUpdated) onConfigUpdated();
     addToast('Firebase configuration removed from browser storage', 'info');
@@ -131,7 +143,7 @@ export default function CloudSyncModal({
           border: '1px solid var(--border-color)',
           boxShadow: 'var(--shadow-lg)',
           width: '100%',
-          maxWidth: '470px',
+          maxWidth: '480px',
           maxHeight: '90vh',
           overflowY: 'auto',
           padding: '24px',
@@ -174,8 +186,65 @@ export default function CloudSyncModal({
           </button>
         </div>
 
-        {/* Error Callout if any */}
-        {errorMessage && (
+        {/* Expired Key Alert Banner */}
+        {isKeyExpired && (
+          <div
+            style={{
+              padding: '14px 16px',
+              backgroundColor: 'rgba(239, 68, 68, 0.08)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              borderRadius: 'var(--radius-md)',
+              marginBottom: '16px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ef4444', fontWeight: 600, fontSize: '0.9rem', marginBottom: '6px' }}>
+              <AlertCircle size={18} />
+              <span>Firebase API Key Expired</span>
+            </div>
+            <p style={{ margin: '0 0 10px 0', fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+              Google automatically deactivated your old API key when it was exposed on GitHub. Please create or copy your active key from Google Cloud Console or Firebase Console:
+            </p>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+              <a
+                href={`https://console.cloud.google.com/apis/credentials?project=${DEFAULT_PROJECT_CONFIG.projectId}`}
+                target="_blank"
+                rel="noreferrer"
+                className="filter-pill active"
+                style={{
+                  fontSize: '0.75rem',
+                  textDecoration: 'none',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px'
+                }}
+              >
+                <span>Renew / Create in Google Cloud</span>
+                <ExternalLink size={12} />
+              </a>
+              <a
+                href={`https://console.firebase.google.com/project/${DEFAULT_PROJECT_CONFIG.projectId}/settings/general`}
+                target="_blank"
+                rel="noreferrer"
+                className="filter-pill"
+                style={{
+                  fontSize: '0.75rem',
+                  textDecoration: 'none',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px'
+                }}
+              >
+                <span>Firebase Console</span>
+                <ExternalLink size={12} />
+              </a>
+            </div>
+          </div>
+        )}
+
+        {/* General Error Callout if any other error */}
+        {errorMessage && !isKeyExpired && (
           <div
             style={{
               padding: '12px 14px',
@@ -285,7 +354,7 @@ export default function CloudSyncModal({
               <span>Sign Out</span>
             </button>
           </div>
-        ) : isFirebaseConfigured ? (
+        ) : isFirebaseConfigured && !isKeyExpired ? (
           /* Firebase configured, ready for Google sign in */
           <div
             style={{
@@ -343,7 +412,7 @@ export default function CloudSyncModal({
             </button>
           </div>
         ) : (
-          /* Firebase setup required */
+          /* Firebase setup required OR key expired */
           <div
             style={{
               padding: '20px 16px',
@@ -354,9 +423,11 @@ export default function CloudSyncModal({
           >
             <div style={{ textAlign: 'center', marginBottom: '14px' }}>
               <KeyRound size={34} color="var(--accent)" style={{ marginBottom: '6px' }} />
-              <h4 style={{ margin: '0 0 6px 0', fontSize: '1rem' }}>Connect Cloud Storage</h4>
+              <h4 style={{ margin: '0 0 6px 0', fontSize: '1rem' }}>
+                {isKeyExpired ? 'Enter New Active API Key' : 'Connect Cloud Storage'}
+              </h4>
               <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                Enter your Firebase API key or configuration to enable Google sign-in and cloud synchronization across your devices:
+                Paste your active API key (starts with <code>AIzaSy...</code>) below to connect your project:
               </p>
             </div>
 
@@ -364,7 +435,7 @@ export default function CloudSyncModal({
               <textarea
                 style={{
                   width: '100%',
-                  height: '90px',
+                  height: '80px',
                   backgroundColor: 'var(--bg-secondary)',
                   border: '1px solid var(--border-color)',
                   borderRadius: 'var(--radius-md)',
@@ -376,7 +447,7 @@ export default function CloudSyncModal({
                   resize: 'vertical',
                   boxSizing: 'border-box'
                 }}
-                placeholder="Paste Firebase API Key (AIzaSy...) or configuration snippet here"
+                placeholder="Paste active API Key (AIzaSy...) here"
                 value={configInput}
                 onChange={(e) => setConfigInput(e.target.value)}
               />
@@ -391,25 +462,17 @@ export default function CloudSyncModal({
                   flexWrap: 'wrap'
                 }}
               >
-                <a
-                  href={`https://console.firebase.google.com/project/${DEFAULT_PROJECT_CONFIG.projectId}/overview`}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    fontSize: '0.76rem',
-                    color: 'var(--accent)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    textDecoration: 'none'
-                  }}
+                <button
+                  type="button"
+                  className="filter-pill"
+                  onClick={handleClearConfig}
+                  style={{ color: 'var(--danger)', fontSize: '0.75rem' }}
                 >
-                  <span>Open Firebase Console</span>
-                  <ExternalLink size={12} />
-                </a>
+                  Reset Key
+                </button>
 
-                <button type="submit" className="filter-pill active" style={{ padding: '6px 14px' }}>
-                  Connect &amp; Save
+                <button type="submit" className="filter-pill active" style={{ padding: '6px 16px' }}>
+                  Save &amp; Connect Key
                 </button>
               </div>
 
@@ -424,14 +487,14 @@ export default function CloudSyncModal({
                   lineHeight: 1.4
                 }}
               >
-                🔒 <strong>Stored privately in your browser:</strong> Saved only in your device's private browser memory (localStorage) and never uploaded to Git.
+                🔒 <strong>Saved securely in your browser:</strong> Stored strictly in local browser storage on this device, never committed to GitHub.
               </div>
             </form>
           </div>
         )}
 
         {/* Firebase Config Accordion (for modifying or clearing when configured) */}
-        {isFirebaseConfigured && (
+        {isFirebaseConfigured && !isKeyExpired && (
           <div style={{ marginTop: '14px' }}>
             <div
               style={{
@@ -457,7 +520,7 @@ export default function CloudSyncModal({
                 <textarea
                   style={{
                     width: '100%',
-                    height: '90px',
+                    height: '80px',
                     backgroundColor: 'var(--bg-tertiary)',
                     border: '1px solid var(--border-color)',
                     borderRadius: 'var(--radius-md)',
@@ -469,7 +532,7 @@ export default function CloudSyncModal({
                     resize: 'vertical',
                     boxSizing: 'border-box'
                   }}
-                  placeholder="Paste new Firebase API Key (AIzaSy...) or configuration snippet"
+                  placeholder="Paste new Firebase API Key (AIzaSy...)"
                   value={configInput}
                   onChange={(e) => setConfigInput(e.target.value)}
                 />
