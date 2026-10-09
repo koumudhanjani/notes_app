@@ -23,7 +23,7 @@ const STORAGE_CONFIG_KEY = 'quicknotes_firebase_config';
 
 // Pre-configured Firebase project settings for notes-app-73658
 export const DEFAULT_FIREBASE_CONFIG = {
-  apiKey: 'AIzaSyAeiPI6DANPd6BiwclB2esUDw0EXeJMTrs',
+  apiKey: 'AIzaSyA5qxDJY6FR68YXLsoVQBrq2UVcOeXKZF0',
   authDomain: 'notes-app-73658.firebaseapp.com',
   projectId: 'notes-app-73658',
   storageBucket: 'notes-app-73658.firebasestorage.app',
@@ -39,11 +39,14 @@ export function getSavedFirebaseConfig() {
     const fromStorage = localStorage.getItem(STORAGE_CONFIG_KEY);
     if (fromStorage) {
       const parsed = JSON.parse(fromStorage);
-      if (parsed && parsed.apiKey) {
+      // Purge old expired key if it was stored locally
+      if (parsed && parsed.apiKey && parsed.apiKey !== 'AIzaSyAeiPI6DANPd6BiwclB2esUDw0EXeJMTrs') {
         return {
           ...DEFAULT_FIREBASE_CONFIG,
           ...parsed
         };
+      } else {
+        localStorage.removeItem(STORAGE_CONFIG_KEY);
       }
     }
   } catch (e) {
