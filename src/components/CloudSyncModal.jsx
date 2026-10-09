@@ -30,6 +30,7 @@ export default function CloudSyncModal({
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [showConfigEditor, setShowConfigEditor] = useState(false);
   const [expiredError, setExpiredError] = useState(false);
+  const [unauthorizedDomain, setUnauthorizedDomain] = useState('');
   const [configInput, setConfigInput] = useState(() => {
     const saved = getSavedFirebaseConfig();
     return saved?.apiKey || '';
@@ -41,6 +42,7 @@ export default function CloudSyncModal({
   const handleGoogleSignIn = async () => {
     setErrorMessage('');
     setExpiredError(false);
+    setUnauthorizedDomain('');
     try {
       setIsSigningIn(true);
       await signInWithGoogle();
@@ -61,8 +63,11 @@ export default function CloudSyncModal({
         setExpiredError(true);
         msg = 'Your Firebase API key is expired. Please renew it in Google Cloud Console or enter an active key.';
       } else if (err.code === 'auth/unauthorized-domain') {
-        const domain = typeof window !== 'undefined' ? window.location.hostname : 'your domain';
-        msg = `Domain not authorized (${domain}). Add it to Firebase Console > Authentication > Settings > Authorized domains.`;
+        const domain = typeof window !== 'undefined' ? window.location.hostname : 'koumudhanjani.github.io';
+        setUnauthorizedDomain(domain);
+        msg = `Domain "${domain}" is not authorized for OAuth in Firebase.`;
+      } else if (err.code === 'auth/operation-not-allowed') {
+        msg = 'Google Sign-in provider is disabled in Firebase Console. Enable it under Authentication > Sign-in method.';
       } else if (err.code === 'auth/popup-closed-by-user') {
         msg = 'Sign-in window was closed.';
       } else if (err.code === 'auth/popup-blocked') {
@@ -369,8 +374,52 @@ export default function CloudSyncModal({
                 </div>
               )}
 
+              {/* Unauthorized Domain Alert Callout */}
+              {unauthorizedDomain && (
+                <div
+                  style={{
+                    marginTop: '16px',
+                    padding: '12px 14px',
+                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                    border: '1px solid rgba(245, 158, 11, 0.35)',
+                    borderRadius: 'var(--radius-md)',
+                    textAlign: 'left'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#f59e0b', fontWeight: 600, fontSize: '0.85rem', marginBottom: '6px' }}>
+                    <AlertCircle size={16} />
+                    <span>Domain Not Authorized in Firebase</span>
+                  </div>
+                  <p style={{ margin: '0 0 10px 0', fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                    Firebase blocked Google Sign-In because <code>{unauthorizedDomain}</code> is not on your project's Authorized Domains list.
+                  </p>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                    <a
+                      href="https://console.firebase.google.com/project/notes-app-73658/authentication/settings"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="filter-pill active"
+                      style={{
+                        fontSize: '0.75rem',
+                        textDecoration: 'none',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '6px 12px'
+                      }}
+                    >
+                      <span>Add Domain in Firebase Console</span>
+                      <ExternalLink size={12} />
+                    </a>
+                  </div>
+                  <p style={{ margin: '0', fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                    In Firebase Settings, scroll to <strong>Authorized domains</strong> &rarr; click <strong>Add domain</strong> &rarr; type <code>{unauthorizedDomain}</code>.
+                  </p>
+                </div>
+              )}
+
               {/* Other error messages */}
-              {errorMessage && !expiredError && (
+              {errorMessage && !expiredError && !unauthorizedDomain && (
                 <div
                   style={{
                     marginTop: '14px',

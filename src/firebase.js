@@ -3,6 +3,8 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut,
   onAuthStateChanged
 } from 'firebase/auth';
@@ -168,6 +170,9 @@ let firebaseApp = null;
 let authInstance = null;
 let firestoreInstance = null;
 const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({
+  prompt: 'select_account'
+});
 
 export function getFirebaseServices(config = null) {
   const activeConfig = config || getSavedFirebaseConfig();
@@ -203,7 +208,27 @@ export async function signInWithGoogle() {
   if (!isConfigured || !auth) {
     throw new Error('Firebase is not configured yet.');
   }
-  return await signInWithPopup(auth, googleProvider);
+  try {
+    return await signInWithPopup(auth, googleProvider);
+  } catch (err) {
+    if (err.code === 'auth/popup-blocked') {
+      console.warn('Popup was blocked by browser. Attempting redirect sign-in...');
+      return await signInWithRedirect(auth, googleProvider);
+    }
+    throw err;
+  }
+}
+
+export async function checkRedirectResult() {
+  const { auth, isConfigured } = getFirebaseServices();
+  if (isConfigured && auth) {
+    try {
+      return await getRedirectResult(auth);
+    } catch (err) {
+      console.warn('Redirect sign-in result error:', err);
+    }
+  }
+  return null;
 }
 
 export async function logOut() {

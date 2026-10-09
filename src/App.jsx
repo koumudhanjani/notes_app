@@ -7,6 +7,7 @@ import { INITIAL_NOTES } from './utils/initialNotes';
 import { generateId, downloadFile } from './utils/helpers';
 import {
   getFirebaseServices,
+  checkRedirectResult,
   onAuthStateChanged,
   collection,
   doc,
@@ -90,6 +91,8 @@ export default function App() {
 
   // Initialize and observe Firebase Authentication
   const authUnsubRef = useRef(null);
+  const prevUserUidRef = useRef(null);
+  const migratedUsersRef = useRef(new Set());
 
   const checkFirebase = useCallback(() => {
     if (authUnsubRef.current) {
@@ -99,6 +102,11 @@ export default function App() {
     const { auth, isConfigured } = getFirebaseServices();
     setIsFirebaseConfigured(isConfigured);
     if (isConfigured && auth) {
+      checkRedirectResult().then((result) => {
+        if (result?.user) {
+          addToast(`Signed in as ${result.user.displayName || result.user.email}`, 'info');
+        }
+      });
       authUnsubRef.current = onAuthStateChanged(auth, (currentUser) => {
         setUser(currentUser);
         if (currentUser) {
@@ -120,9 +128,30 @@ export default function App() {
     };
   }, [checkFirebase]);
 
-  const hasAutoMigratedRef = useRef(false);
-  const notesRef = useRef(notes);
-  notesRef.current = notes;
+  // When user signs in, signs out, or switches accounts, load that user's isolated local notes
+  useEffect(() => {
+    const currentUid = user?.uid || 'guest';
+    if (prevUserUidRef.current !== currentUid) {
+      prevUserUidRef.current = currentUid;
+      const userStorageKey = user ? `quicknotes_data_${user.uid}` : STORAGE_KEY;
+      try {
+        const saved = localStorage.getItem(userStorageKey);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setNotes(parsed);
+            setActiveNoteId(parsed[0].id);
+            return;
+          }
+        }
+      } catch (e) {
+        console.error('Failed reading user notes from storage:', e);
+      }
+      // If no local notes exist for this user, start with fresh default notes
+      setNotes(INITIAL_NOTES);
+      setActiveNoteId(INITIAL_NOTES[0]?.id || null);
+    }
+  }, [user?.uid]);
 
   // Real-time Firestore Cloud Sync when User is authenticated
   useEffect(() => {
@@ -148,11 +177,10 @@ export default function App() {
             }
             return cloudNotes[0]?.id || null;
           });
-        } else if (snapshot.empty && !hasAutoMigratedRef.current) {
-          hasAutoMigratedRef.current = true;
-          // Cloud is empty for this user: automatically save current notes once
-          const initialToUpload = notesRef.current || [];
-          initialToUpload.forEach((n) => {
+        } else if (snapshot.empty && !migratedUsersRef.current.has(user.uid)) {
+          migratedUsersRef.current.add(user.uid);
+          // New user with empty cloud: initialize fresh welcome notes in their Firestore
+          INITIAL_NOTES.forEach((n) => {
             setDoc(doc(db, 'users', user.uid, 'notes', n.id), n).catch(console.error);
           });
         }
@@ -165,14 +193,15 @@ export default function App() {
     return () => unsubscribe();
   }, [user?.uid]);
 
-  // Save notes locally for offline backup
+  // Save notes locally for offline backup (scoped per user)
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+      const userStorageKey = user ? `quicknotes_data_${user.uid}` : STORAGE_KEY;
+      localStorage.setItem(userStorageKey, JSON.stringify(notes));
     } catch (e) {
       console.error('Failed to save notes:', e);
     }
-  }, [notes]);
+  }, [notes, user?.uid]);
 
   // Extract all unique tags
   const allTags = useMemo(() => {
